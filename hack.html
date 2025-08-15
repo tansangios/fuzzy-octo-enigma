@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>DPISUPER • VIP Galaxy HUD</title>
+<meta name="description" content="DPISUPER VIP Galaxy HUD — demo UI: logo toggle, draggable HUD, file import/export, login modal." />
+<style>
+  /* ====== Base / Theme ====== */
+  :root{
+    --bg-1:#071019; --bg-2:#021326; --muted:#9fb0c8;
+    --accent1:#ff3c78; --accent2:#ff8a00; --accent3:#ffd200; --accent4:#4cffb6; --accent5:#00d2ff; --accent6:#7a5cff; --accent7:#ff46c4;
+    --glass: rgba(255,255,255,0.03);
+    --card: rgba(10,18,28,0.75);
+    --fg:#e6eef7;
+    --shadow: rgba(0,0,0,0.6);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial; color:var(--fg); -webkit-font-smoothing:antialiased;}
+  body{
+    background:
+      radial-gradient(900px 500px at 10% -10%, rgba(124,58,237,0.12), transparent 30%),
+      radial-gradient(700px 400px at 110% 10%, rgba(34,211,238,0.08), transparent 30%),
+      linear-gradient(180deg,var(--bg-1),var(--bg-2));
+    padding:28px;
+  }
+
+  /* ===== 7-color animated border frame (subtle) ===== */
+  .frame{
+    position:fixed; inset:10px; pointer-events:none; border-radius:18px; z-index:0;
+    box-shadow: 0 30px 100px rgba(0,0,0,0.6), inset 0 0 120px rgba(0,0,0,0.4);
+  }
+  .frame::before{
+    content:""; position:absolute; inset:-3px; border-radius:20px; z-index:-1;
+    background: conic-gradient(from 0deg, var(--accent1),var(--accent2),var(--accent3),var(--accent4),var(--accent5),var(--accent6),var(--accent7),var(--accent1));
+    filter: blur(12px) saturate(1.05); opacity:.9; animation: spin 10s linear infinite;
+  }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+
+  /* ===== Layout ===== */
+  .wrap{ width:min(1100px,95%); margin:0 auto; position:relative; z-index:2; }
+  header{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; }
+  .brand{ display:flex; gap:12px; align-items:center; font-weight:800; letter-spacing:.4px; }
+  .logo-mark{ width:48px; height:48px; border-radius:12px; display:grid; place-items:center; font-weight:900; background:linear-gradient(135deg,var(--accent6),var(--accent5)); box-shadow:0 10px 30px rgba(122,92,255,0.14); color:#041018; }
+
+  .grid{ display:grid; grid-template-columns:1fr 420px; gap:18px; align-items:start; }
+  @media (max-width:980px){ .grid{ grid-template-columns:1fr; } }
+
+  .card{ background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.06)); border-radius:14px; padding:18px; border:1px solid rgba(255,255,255,0.03); box-shadow:0 10px 40px var(--shadow); }
+
+  h1{ margin:0; font-size:clamp(20px,3.2vw,34px) }
+  .muted{ color:var(--muted); margin-top:6px; font-size:14px }
+
+  /* ===== Buttons & effects ===== */
+  .btn{ display:inline-flex; gap:10px; align-items:center; padding:10px 14px; border-radius:12px; cursor:pointer; border:1px solid rgba(255,255,255,0.04); background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); color:var(--fg); font-weight:700; transition: transform .12s ease, box-shadow .12s ease;}
+  .btn:active{ transform: translateY(1px) }
+  .btn.primary{ background: linear-gradient(90deg,var(--accent6),var(--accent5)); color:#0b1220; box-shadow: 0 10px 30px rgba(122,92,255,0.12); }
+  .btn.ghost{ background:transparent; border:1px solid rgba(255,255,255,0.03) }
+
+  /* glitter (moving sheen) for fancy buttons */
+  .glitter{ position:relative; overflow:hidden; }
+  .glitter::after{ content:""; position:absolute; inset:-40% -30% auto -30%; height:120%; transform:skewX(-18deg) translateX(-120%); background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.22), rgba(255,255,255,0)); filter: blur(8px); opacity:.9; animation: glint 3.2s linear infinite; pointer-events:none; }
+  @keyframes glint{ to{ transform:skewX(-18deg) translateX(220%); } }
+
+  /* small pills */
+  .pill{ display:inline-flex; gap:8px; align-items:center; padding:6px 10px; border-radius:999px; background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(0,0,0,0.06)); border:1px solid rgba(255,255,255,0.03); font-weight:700; font-size:13px; }
+
+  /* dropzone */
+  .dropzone{ border:2px dashed rgba(255,255,255,0.04); border-radius:12px; padding:18px; text-align:center; transition:all .14s ease; }
+  .dropzone.drag{ background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(122,92,255,0.03)); border-color: rgba(122,92,255,0.6); transform:scale(1.01); }
+
+  /* ===== HUD (draggable) ===== */
+  .hud{
+    position:fixed; bottom:18px; right:18px; width:360px; max-width:92vw; z-index:60;
+    border-radius:16px; padding:12px; user-select:none; cursor:grab;
+    background: linear-gradient(180deg, rgba(6,10,16,0.9), rgba(8,12,20,0.85));
+    border:1px solid rgba(255,255,255,0.03); box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+    transition: transform .18s cubic-bezier(.2,.9,.2,1), opacity .18s ease, right .18s ease, left .18s ease;
+  }
+  .hud.grabbing{ cursor:grabbing; }
+  .hud.min{ width:160px; padding:10px; }
+  .hud .head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .hud .title{ font-weight:800; }
+  .controls{ display:flex; gap:8px; align-items:center; }
+
+  .switch{ appearance:none; width:46px; height:28px; border-radius:999px; position:relative; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.03); }
+  .switch:after{ content:""; position:absolute; top:3px; left:3px; width:22px; height:22px; background:white; border-radius:999px; transition:transform .18s ease; box-shadow:0 6px 20px rgba(0,0,0,0.45); }
+  .switch:checked{ background:linear-gradient(90deg,var(--accent6),var(--accent5)); }
+  .switch:checked:after{ transform:translateX(18px); }
+
+  /* HUD hidden */
+  .hud.hidden{ transform: translateY(18px) scale(.98); opacity:0; pointer-events:none; }
+
+  /* ===== New Floating LOGO (bottom-right) ===== */
+  .logo-btn{
+    position:fixed; right:14px; bottom:14px; z-index:80; width:66px; height:66px; border-radius:16px;
+    display:grid; place-items:center; cursor:pointer; backdrop-filter: blur(6px); border:1px solid rgba(255,255,255,0.06);
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+  .logo-inner{ width:52px; height:52px; border-radius:12px; display:grid; place-items:center; font-weight:900; color:#041018; position:relative; overflow:hidden; background:linear-gradient(135deg,var(--accent6),var(--accent5)); }
+  .logo-inner::before{ content:""; position:absolute; inset:-40%; background: conic-gradient(var(--accent1),var(--accent2),var(--accent3),var(--accent4),var(--accent5),var(--accent6),var(--accent7)); filter: blur(14px); opacity:0.95; animation: spin 8s linear infinite; mix-blend-mode: screen; }
+  .logo-btn.active{ transform: scale(1.03); box-shadow: 0 18px 60px rgba(122,92,255,0.18); }
+  .logo-badge{ position:absolute; top:6px; right:6px; background:#ff3c78; color:white; font-size:11px; padding:2px 6px; border-radius:999px; font-weight:800; box-shadow:0 6px 20px rgba(0,0,0,0.35); }
+
+  /* side menu slide-in */
+  .side-menu{ position:fixed; right:0; top:0; height:100vh; width:420px; max-width:86vw; z-index:70; background: linear-gradient(180deg, rgba(8,12,20,0.98), rgba(6,10,14,0.98)); transform:translateX(100%); transition: transform .32s cubic-bezier(.2,.9,.2,1); box-shadow: -20px 0 60px rgba(0,0,0,0.6); padding:22px; display:flex; flex-direction:column; gap:12px; }
+  .side-menu.open{ transform:translateX(0%); }
+  @media (max-width:980px){ .side-menu{ width:92vw; } }
+
+  /* loading overlay */
+  .loading-wrap{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:90; backdrop-filter: blur(4px); }
+  .loader{ width:220px; height:220px; border-radius:50%; display:grid; place-items:center; background: conic-gradient(from 120deg, var(--accent1),var(--accent2),var(--accent3),var(--accent4),var(--accent5),var(--accent6),var(--accent7)); filter: blur(8px); opacity:.12; pointer-events:none; }
+  .loader .box{ width:120px; height:120px; border-radius:12px; background:linear-gradient(180deg, rgba(8,16,28,0.85), rgba(5,8,12,0.9)); display:grid; place-items:center; color:var(--muted); font-weight:800; box-shadow:0 20px 80px rgba(0,0,0,0.6); }
+
+  /* small text */
+  .sm{ font-size:13px; color:var(--muted); }
+
+  /* log area monospace */
+  #logArea{ white-space:pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace; font-size:13px; color:var(--muted); max-height:160px; overflow:auto; }
+
+</style>
+</head>
+<body>
+  <div class="frame" aria-hidden="true"></div>
+
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="logo-mark">V5</div>
+        <div>
+          <div style="font-size:15px">DPISUPER • V5 MAX</div>
+          <div class="sm">Galaxy HUD — Demo UI only</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn ghost" id="helpBtn">Help</button>
+        <label class="btn" for="fileInput">📂 Import</label>
+        <input id="fileInput" type="file" accept=".json,.txt" style="display:none" />
+        <button class="btn primary" id="quickOpen">Open</button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card">
+        <h1>DPISUPER V5 MAX — VIP Galaxy HUD</h1>
+        <div class="muted">Bấm logo góc phải dưới để mở/đóng menu. HUD kéo/dock trái-phải. Import/Export config. Mọi thứ là demo UI, không chứa hành vi can thiệp.</div>
+
+        <div style="height:16px"></div>
+
+        <div class="card dropzone" id="dropzone">
+          <strong>📁 Kéo & thả tệp cấu hình (.json / .txt)</strong>
+          <div class="sm" style="margin-top:8px">Mẫu JSON:</div>
+          <pre style="white-space:pre-wrap;background:transparent;border:none;color:var(--muted);margin-top:8px;font-size:13px;">
+{
+  "theme":"dark",
+  "hud":{"sw1":true,"sw2":false,"sw3":true,"rng1":65},
+  "access":{"ok":true}
+}
+          </pre>
+        </div>
+
+        <div style="height:16px"></div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn primary glitter" id="btnAllOn">🔥 Bật tất cả</button>
+          <button class="btn" id="btnAllOff">🛑 Tắt tất cả</button>
+          <button class="btn" id="btnExport">⬇️ Xuất cấu hình</button>
+          <button class="btn" id="btnDemo">⚙️ Áp demo</button>
+        </div>
+
+        <div style="height:14px"></div>
+
+        <div class="card" style="padding:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div><strong>Log hoạt động</strong></div>
+            <div class="sm" id="lastImport">Chưa import</div>
+          </div>
+          <div id="logArea" style="margin-top:10px">—</div>
+        </div>
+
+        <footer style="margin-top:12px" class="sm">© <span id="y"></span> DPISUPER • V5 MAX — Demo UI. Giữ truyền thống: gọn, sạch, rõ ràng.</footer>
+      </section>
+
+      <aside>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div><strong>Trạng thái</strong></div>
+            <div><span class="pill" id="ping">Ping: —</span></div>
+          </div>
+
+          <div style="margin-top:12px;display:grid;gap:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>🎯 Aim Assist</div>
+              <input type="checkbox" id="sw1" class="switch" />
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>👁️ ESP Outline</div>
+              <input type="checkbox" id="sw2" class="switch" />
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>🔒 Chống giật</div>
+              <input type="checkbox" id="sw3" class="switch" />
+            </div>
+
+            <div>
+              <label class="sm">Độ nhạy</label>
+              <input id="rng1" type="range" min="0" max="100" value="50" style="width:100%" />
+            </div>
+
+            <hr style="border:none;border-top:1px solid rgba(255,255,255,0.03)"/>
+
+            <div style="font-weight:800">Tính năng VIP (demo)</div>
+            <div style="display:grid;gap:8px;margin-top:8px">
+              <button class="btn" id="fnAutoCfg">Auto-config</button>
+              <button class="btn" id="fnProxy">Proxy Auto</button>
+              <button class="btn" id="fnUID">Fake UID</button>
+              <button class="btn" id="fnSkin">Apply Skin</button>
+              <button class="btn" id="fnGhost">Ghost Mode</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:12px"></div>
+
+        <div class="card" style="display:grid;gap:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div><strong>Quick Actions</strong></div>
+            <div class="sm">fast</div>
+          </div>
+          <div style="display:grid;gap:8px;margin-top:8px">
+            <button class="btn" id="btnDockLeft">⬅️ Dock trái</button>
+            <button class="btn" id="btnDockRight">➡️ Dock phải</button>
+            <button class="btn" id="btnMinimize">📦 Thu gọn HUD</button>
+            <button class="btn" id="btnShowHUD">🔎 Hiện HUD</button>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Floating HUD (actual mini controls) -->
+  <div class="hud" id="hud" role="region" aria-label="Galaxy HUD">
+    <div class="head" id="hudHandle">
+      <div class="title">Galaxy HUD • V5</div>
+      <div class="controls">
+        <button class="btn ghost" id="hudMin">—</button>
+        <button class="btn ghost" id="hudClose">✕</button>
+      </div>
+    </div>
+    <div style="height:10px"></div>
+    <div style="display:grid;gap:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>Aim</div><input type="checkbox" id="h_sw1" class="switch"/>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>ESP</div><input type="checkbox" id="h_sw2" class="switch"/>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>Chống giật</div><input type="checkbox" id="h_sw3" class="switch"/>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn primary" id="hudAllOn">Bật tất cả</button>
+        <button class="btn" id="hudAllOff">Tắt</button>
+      </div>
+    </div>
+    <div style="height:8px"></div>
+    <div class="sm">Kéo HUD để đặt vị trí; chạm giữ lâu để dock trái/phải.</div>
+  </div>
+
+  <!-- Side menu that slides in when logo is toggled -->
+  <div class="side-menu" id="sideMenu" aria-hidden="true">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-weight:900">DPISUPER • MENU</div>
+      <button class="btn ghost" id="sideClose">✕</button>
+    </div>
+
+    <div style="display:grid;gap:8px">
+      <button class="btn primary" id="menuLogin">🔐 Đăng nhập (modal)</button>
+      <label class="btn" for="fileInput2">📂 Import file (menu)</label>
+      <input id="fileInput2" type="file" accept=".json,.txt" style="display:none" />
+      <button class="btn" id="menuExport">⬇️ Xuất cấu hình</button>
+      <button class="btn" id="menuAllOn">🔥 Bật tất cả</button>
+      <button class="btn" id="menuAllOff">🛑 Tắt tất cả</button>
+    </div>
+
+    <div style="margin-top:16px">
+      <div style="font-weight:800">Info</div>
+      <div class="sm" id="menuInfo">Không có thông tin.</div>
+    </div>
+  </div>
+
+  <!-- Logo toggle bottom-right -->
+  <div class="logo-btn" id="logoBtn" title="Mở/Đóng menu">
+    <div class="logo-inner" id="logoInner">V5</div>
+    <div class="logo-badge" id="logoBadge" style="display:none">VIP</div>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="loading" class="loading-wrap" style="display:none">
+    <div class="loader"><div class="box">LOADING...</div></div>
+  </div>
+
+  <!-- Simple modal for login -->
+  <dialog id="loginModal">
+    <form method="dialog" class="modal-body" style="padding:18px; width:320px; color:var(--fg); background:linear-gradient(180deg,rgba(10,18,28,0.96),rgba(6,10,14,0.96)); border-radius:12px; border:1px solid rgba(255,255,255,0.03);">
+      <h3 style="margin:0 0 8px">Đăng nhập</h3>
+      <div class="sm" style="margin-bottom:8px">Nhập key demo (VIP-204)</div>
+      <input id="loginKey" placeholder="Nhập key" style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.04); background:transparent; color:var(--fg); margin-bottom:10px;" />
+      <menu style="display:flex; gap:8px; justify-content:flex-end;">
+        <button class="btn ghost" value="cancel">Huỷ</button>
+        <button class="btn primary" id="loginOk" value="default">Xác nhận</button>
+      </menu>
+      <div class="sm" id="loginMsg" style="margin-top:8px; color:var(--muted)"></div>
+    </form>
+  </dialog>
+
+<script>
+/* ===== Utilities ===== */
+const $ = (s, root=document) => root.querySelector(s);
+const $$ = (s, root=document) => Array.from((root||document).querySelectorAll(s));
+const store = {
+  get(k,def){ try{ const v=localStorage.getItem(k); return v==null?def:JSON.parse(v); }catch(e){ return def; } },
+  set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+};
+$("#y") && ($("#y").textContent = new Date().getFullYear());
+
+/* ===== Loading helpers ===== */
+function showLoad(){ $("#loading").style.display = "flex"; }
+function hideLoad(){ $("#loading").style.display = "none"; }
+
+/* ===== Fake metrics (ping) ===== */
+function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function tick(){ $("#ping").textContent = "Ping: " + rand(12,120) + " ms"; }
+tick(); setInterval(tick,2600);
+
+/* ===== Logo toggle -> open/close side menu & HUD ===== */
+const logoBtn = $("#logoBtn"), sideMenu = $("#sideMenu"), hud = $("#hud"), logoInner = $("#logoInner"), logoBadge = $("#logoBadge");
+let menuOpen = false;
+function setMenu(open){
+  menuOpen = !!open;
+  sideMenu.classList.toggle("open", menuOpen);
+  logoBtn.classList.toggle("active", menuOpen);
+  hud.classList.toggle("hidden", !menuOpen); // when menu closed keep hud visible? We hide hud when menu open? keep visible as desired
+  // show badge if logged in
+  const access = store.get("access", {ok:false});
+  logoBadge.style.display = access.ok ? "block" : "none";
+}
+logoBtn.addEventListener("click", ()=> setMenu(!menuOpen));
+$("#quickOpen").addEventListener("click", ()=> setMenu(true));
+$("#sideClose").addEventListener("click", ()=> setMenu(false));
+
+/* ===== Drag & Dock HUD ===== */
+(function(){
+  const handle = $("#hudHandle");
+  let dragging=false, sx=0, sy=0, ox=0, oy=0, longpress=false, longTimer=null;
+  const saved = store.get("hud-pos", null);
+  if(saved){
+    if(saved.left) hud.style.left = saved.left;
+    if(saved.top) hud.style.top = saved.top;
+    if(saved.right) hud.style.right = saved.right;
+  }
+  function start(e){
+    dragging = true; hud.classList.add("grabbing");
+    const rect = hud.getBoundingClientRect();
+    ox = rect.left; oy = rect.top;
+    sx = (e.touches ? e.touches[0].clientX : e.clientX);
+    sy = (e.touches ? e.touches[0].clientY : e.clientY);
+    longTimer = setTimeout(()=>{ longpress=true; }, 450);
+    e.preventDefault();
+  }
+  function move(e){
+    if(!dragging) return;
+    const cx = (e.touches ? e.touches[0].clientX : e.clientX);
+    const cy = (e.touches ? e.touches[0].clientY : e.clientY);
+    const nx = ox + (cx - sx), ny = oy + (cy - sy);
+    hud.style.left = nx + "px"; hud.style.top = ny + "px"; hud.style.right = "auto";
+  }
+  function end(){
+    dragging = false; hud.classList.remove("grabbing");
+    clearTimeout(longTimer);
+    if(longpress){
+      const mid = window.innerWidth / 2;
+      const rect = hud.getBoundingClientRect();
+      if(rect.left + rect.width/2 < mid){
+        hud.style.left = "16px"; hud.style.right = "auto"; store.set("hud-pos",{left:"16px", right:"auto"});
+      } else {
+        hud.style.right = "16px"; hud.style.left = "auto"; store.set("hud-pos",{right:"16px", left:"auto"});
+      }
+    } else {
+      const rect = hud.getBoundingClientRect();
+      store.set("hud-pos",{left:rect.left + "px", top:rect.top + "px"});
+    }
+    longpress=false;
+  }
+  ["mousedown","touchstart"].forEach(ev => handle.addEventListener(ev, start, {passive:false}));
+  ["mousemove","touchmove"].forEach(ev => document.addEventListener(ev, move, {passive:false}));
+  ["mouseup","touchend","touchcancel"].forEach(ev => document.addEventListener(ev, end, {passive:true}));
+})();
+
+/* ===== HUD inner controls <-> main controls mirror & save state ===== */
+const ids = ["sw1","sw2","sw3","rng1"];
+function saveHudState(){
+  const s = { sw1: !!$("#sw1").checked, sw2: !!$("#sw2").checked, sw3: !!$("#sw3").checked, rng1: +$("#rng1").value };
+  store.set("hud-state", s);
+}
+function loadHudState(){
+  const s = store.get("hud-state", {});
+  $("#sw1").checked = !!s.sw1; $("#h_sw1").checked = !!s.sw1;
+  $("#sw2").checked = !!s.sw2; $("#h_sw2").checked = !!s.sw2;
+  $("#sw3").checked = !!s.sw3; $("#h_sw3").checked = !!s.sw3;
+  if(typeof s.rng1 !== "undefined") $("#rng1").value = s.rng1;
+}
+loadHudState();
+ids.forEach(id => {
+  const el = $("#"+id);
+  if(el) el.addEventListener("input", saveHudState);
+  const hel = $("#h_"+id);
+  if(hel) hel.addEventListener("input", ()=>{ $("#"+id).checked = hel.checked; saveHudState(); });
+});
+
+/* mirror hud buttons */
+$("#hudAllOn").addEventListener("click", ()=> $("#btnAllOn").click());
+$("#hudAllOff").addEventListener("click", ()=> $("#btnAllOff").click());
+$("#hudMin").addEventListener("click", ()=> hud.classList.toggle("min"));
+$("#hudClose").addEventListener("click", ()=> { hud.style.display="none"; store.set("hud-closed",true); });
+
+/* ===== Buttons: all on/off/export/demo ===== */
+function log(txt){
+  const el = $("#logArea");
+  const now = new Date().toLocaleTimeString();
+  el.textContent = "["+now+"] " + txt + "\n" + el.textContent;
+}
+$("#btnAllOn").addEventListener("click", ()=>{
+  ["sw1","sw2","sw3"].forEach(id=>{ $("#"+id).checked = true; $("#h_"+id).checked = true; });
+  $("#rng1").value = 88; saveHudState();
+  log("Bật tất cả (demo).");
+});
+$("#btnAllOff").addEventListener("click", ()=>{
+  ["sw1","sw2","sw3"].forEach(id=>{ $("#"+id).checked = false; $("#h_"+id).checked = false; });
+  $("#rng1").value = 40; saveHudState();
+  log("Tắt tất cả (demo).");
+});
+$("#btnExport").addEventListener("click", ()=>{
+  const payload = { theme: document.body.classList.contains("light") ? "light":"dark", hud: store.get("hud-state",{}), access: store.get("access",{ok:false}) };
+  const blob = new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "dpisuper_v5_config.json"; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  log("Xuất config (demo).");
+});
+$("#btnDemo").addEventListener("click", ()=>{ applyConfig({ theme:"dark", hud:{sw1:true,sw2:true,sw3:true,rng1:82}, access:{ok:true} }); log("Áp demo config."); });
+
+/* menu quick actions */
+$("#menuAllOn").addEventListener("click", ()=> $("#btnAllOn").click());
+$("#menuAllOff").addEventListener("click", ()=> $("#btnAllOff").click());
+$("#menuExport").addEventListener("click", ()=> $("#btnExport").click());
+$("#menuLogin").addEventListener("click", ()=> showLogin());
+
+/* VIP demo functions */
+function fn(name){
+  log(name + " chạy (demo). GUI only.");
+  alert(name + " — demo only.");
+}
+["fnAutoCfg","fnProxy","fnUID","fnSkin","fnGhost"].forEach(id=>{
+  $( "#" + id ).addEventListener("click", ()=> fn(id));
+});
+
+/* ===== File import (drag/drop + inputs) ===== */
+const fileInput = $("#fileInput"), fileInput2 = $("#fileInput2"), dropzone = $("#dropzone");
+fileInput.addEventListener("change", ()=> fileInput.files[0] && handleFile(fileInput.files[0]));
+fileInput2 && fileInput2.addEventListener("change", ()=> fileInput2.files[0] && handleFile(fileInput2.files[0]));
+["dragenter","dragover"].forEach(ev=> dropzone.addEventListener(ev, e=>{ e.preventDefault(); dropzone.classList.add("drag"); }));
+["dragleave","drop"].forEach(ev=> dropzone.addEventListener(ev, e=>{ e.preventDefault(); dropzone.classList.remove("drag"); }));
+dropzone.addEventListener("drop", e=>{ const f = e.dataTransfer.files?.[0]; if(f) handleFile(f); });
+
+function handleFile(file){
+  showLoad();
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const text = String(e.target.result || "");
+      const cfg = JSON.parse(text);
+      applyConfig(cfg);
+      $("#lastImport").textContent = "Import: " + (file.name||"file");
+      log("Imported JSON: " + (file.name||"file"));
+    } catch(err) {
+      // try key=value parsing
+      const text = String(e.target.result || "");
+      const kv = parseKV(text);
+      if(kv){ applyConfig(kv); $("#lastImport").textContent = "Import (KV): " + (file.name||"file"); log("Imported KV file: " + (file.name||"file")); }
+      else { alert("Không đọc được file."); log("Import failed: " + (file.name||"file")); }
+    } finally { hideLoad(); }
+  };
+  reader.onerror = ()=> { hideLoad(); alert("Lỗi đọc file."); };
+  reader.readAsText(file);
+}
+function parseKV(txt){
+  const out = {};
+  txt.split(/\r?\n/).forEach(line=>{
+    const m = line.match(/^\s*([A-Za-z0-9_.-]+)\s*[:=]\s*(.+?)\s*$/);
+    if(m) out[m[1]] = parseVal(m[2]);
+  });
+  if(Object.keys(out).length===0) return null;
+  const hud = {};
+  Object.keys(out).forEach(k=>{ if(k.startsWith("hud.")){ hud[k.slice(4)] = out[k]; delete out[k]; } });
+  if(Object.keys(hud).length) out.hud = hud;
+  return out;
+}
+function parseVal(v){ if(v==="true") return true; if(v==="false") return false; if(!isNaN(Number(v))) return Number(v); return v; }
+
+/* ===== Apply config (theme, hud, access) ===== */
+function applyConfig(cfg){
+  if(!cfg) return;
+  if(cfg.theme){ const t = cfg.theme==="light" ? "light" : "dark"; document.body.classList.toggle("light", t==="light"); store.set("theme", t); }
+  if(cfg.hud && typeof cfg.hud === "object"){
+    Object.entries(cfg.hud).forEach(([k,v])=>{
+      if(k==="sw1" || k==="sw2" || k==="sw3"){ try{ $("#"+k).checked = !!v; $("#h_"+k).checked = !!v; }catch(e){} }
+      if(k==="rng1"){ try{ $("#rng1").value = +v; }catch(e){} }
+    }); saveHudState();
+  }
+  if(cfg.access && typeof cfg.access === "object"){ store.set("access", cfg.access); log("Access set by file: " + JSON.stringify(cfg.access)); }
+}
+
+/* ===== Login modal (better than prompt) ===== */
+const loginModal = $("#loginModal");
+function showLogin(){ loginModal.showModal(); $("#loginMsg").textContent = "Key demo: VIP-204"; $("#loginKey").value = ""; }
+$("#menuLogin").addEventListener("click", showLogin);
+$("#loginOk").addEventListener("click", ()=>{
+  const key = $("#loginKey").value.trim();
+  if(key === "VIP-204"){ store.set("access",{ok:true, at:Date.now()}); $("#loginMsg").textContent = "Key hợp lệ — demo."; log("Login OK"); $("#logoBadge").style.display = "block"; }
+  else { store.set("access",{ok:false}); $("#loginMsg").textContent = "Key sai."; log("Login failed"); }
+});
+loginModal.addEventListener("close", ()=>{ /* nothing */ });
+
+/* ===== Side menu import file hookup (menu) ===== */
+fileInput2 && fileInput2.addEventListener("change", ()=> fileInput2.files[0] && handleFile(fileInput2.files[0]));
+
+/* ===== Misc small actions ===== */
+$("#btnDockLeft").addEventListener("click", ()=> { hud.style.left="16px"; hud.style.right="auto"; store.set("hud-pos",{left:"16px", right:"auto"}); log("Dock trái"); });
+$("#btnDockRight").addEventListener("click", ()=> { hud.style.right="16px"; hud.style.left="auto"; store.set("hud-pos",{right:"16px", left:"auto"}); log("Dock phải"); });
+$("#btnMinimize").addEventListener("click", ()=> { hud.classList.toggle("min"); log("Toggle minimize"); });
+$("#btnShowHUD").addEventListener("click", ()=> { hud.style.display = "block"; log("Show HUD"); });
+
+/* ===== Init restore ===== */
+(function init(){
+  if(store.get("hud-closed")) hud.style.display = "none";
+  const access = store.get("access", {ok:false});
+  if(access.ok) $("#logoBadge").style.display = "block";
+  // restore theme if stored
+  const theme = store.get("theme","dark");
+  document.body.classList.toggle("light", theme==="light");
+  loadHudState();
+  // gentle intro load
+  showLoad(); setTimeout(()=>{ hideLoad(); log("DPISUPER V5 MAX khởi động (UI demo)."); }, 600);
+})();
+
+/* ===== small keyboard shortcut: press L to toggle menu ===== */
+document.addEventListener("keydown",(e)=>{ if(e.key.toLowerCase()==="l"){ setMenu(!menuOpen); } });
+
+/* expose setMenu to other places */
+function setMenu(open){
+  menuOpen = !!open;
+  sideMenu.classList.toggle("open", menuOpen);
+  logoBtn.classList.toggle("active", menuOpen);
+  // When menu opens, keep HUD visible; if you want hide HUD when menu open, change below.
+  // hud.classList.toggle("hidden", !menuOpen);
+}
+</script>
+</body>
+</html>
